@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>맥 압축파일 윈도우 한글 깨짐 해결 | 한글 파일명 복구기</title>
+<meta name="description" content="맥에서 보낸 압축파일이 윈도우에서 비어 있거나 한글 파일명이 ㅎㅏㄴㄱㅡㄹ, 斑利辑처럼 깨질 때. 파일·폴더·ZIP을 넣으면 원래 한글 이름으로 복구합니다. 설치·가입 없음, 파일은 서버로 안 나감.">
+<meta name="keywords" content="맥 윈도우 한글 깨짐, 압축파일 한글 깨짐, 파일명 자음 모음 분리, 맥 zip 윈도우 빈 폴더, NFD NFC 변환">
+<meta property="og:title" content="한글 파일명 복구기">
+<meta property="og:description" content="맥↔윈도우 사이에서 깨진 한글 파일명·압축파일을 드래그 한 번으로 복구">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ko_KR">
+<style>html{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+/* Layout: single narrow column — hero shows the broken→fixed transform, then drop zone + options, then result list */
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --fg:#17202b; --muted:#5d6b7a; --line:#d5dce4;
+  --accent:#2f5bd3; --accent-fg:#ffffff; --broken:#c2410c; --ok:#15803d; --info:#7c3aed; --tint:#e6ecfb;
+  --f-display:"Black Han Sans","IBM Plex Sans KR",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10151c; --surface:#18202a; --fg:#e6ebf1; --muted:#95a3b3; --line:#2b3643;
+  --accent:#7c9cf5; --accent-fg:#0e1420; --broken:#fb923c; --ok:#4ade80; --info:#c4b5fd; --tint:#1c2740; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10151c; --surface:#18202a; --fg:#e6ebf1; --muted:#95a3b3; --line:#2b3643;
+  --accent:#7c9cf5; --accent-fg:#0e1420; --broken:#fb923c; --ok:#4ade80; --info:#c4b5fd; --tint:#1c2740; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.6}
+.wrap{max-width:680px;margin:0 auto;padding-inline:16px;padding-block:32px 48px;display:grid;gap:24px}
+.tag{font-size:12px;letter-spacing:.04em;color:var(--ok);font-weight:500}
+h1{font-family:var(--f-display);font-weight:400;font-size:clamp(28px,6vw,40px);line-height:1.15;margin:4px 0 8px;text-wrap:balance}
+.lead{color:var(--muted);margin:0;max-width:60ch}
+.lead .hook{display:block;color:var(--fg);font-weight:700;font-size:17px;margin-bottom:2px}
+.drop span b{color:var(--fg)}
+.demo{display:grid;gap:6px;font-family:var(--f-mono);font-size:clamp(15px,3.6vw,19px);margin-top:16px}
+.demo div{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.demo .bad{color:var(--broken);text-decoration:line-through;text-decoration-thickness:1px}
+.demo .arrow{color:var(--muted)}
+.demo .good{color:var(--ok);font-weight:500}
+.dropbox{display:grid;gap:10px}
+.drop{background:var(--surface);border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop:focus-visible,.drop.over{border-color:var(--accent);background:var(--tint);outline:none}
+.drop strong{display:block;font-size:17px}
+.drop span{color:var(--muted);font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:13px}
+.row label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.row input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:3px;font-size:13px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:12px}
+.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+.head h2{font-size:15px;margin:0}
+.count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ex{font-size:11px;letter-spacing:.06em;background:var(--tint);color:var(--accent);padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:middle}
+.stats{display:flex;flex-wrap:wrap;gap:6px}
+ul.list{list-style:none;margin:0;padding:0;display:grid;max-height:420px;overflow-y:auto}
+ul.list li{display:grid;grid-template-columns:5.6em 1fr;gap:4px 10px;padding:10px 0;border-top:1px solid var(--line);min-width:0}
+ul.list li:first-child{border-top:0}
+ul.list li.more{display:block;color:var(--muted);font-size:13px}
+.pills{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.fix{background:color-mix(in srgb,var(--broken) 15%,transparent);color:var(--broken)}
+.pill.fine{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.pill.body{background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info)}
+.pill.skip{background:var(--tint);color:var(--muted)}
+.names{min-width:0;font-family:var(--f-mono);font-size:13px;overflow-wrap:anywhere}
+.names .from{color:var(--muted)}
+.names .to{color:var(--fg);font-weight:500}
+.names .pick{display:flex;gap:6px;align-items:center;font-family:var(--f-body);font-size:12px;color:var(--muted);margin-top:4px;cursor:pointer}
+.names .pick input{accent-color:var(--accent)}
+.names .src{color:var(--muted);font-size:12px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-size:14px;font-weight:500;border-radius:8px;padding:10px 16px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.msg{font-size:13px;color:var(--muted);min-height:1.2em;margin:0}
+textarea{width:100%;box-sizing:border-box;font-family:var(--f-mono);font-size:14px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg);color:var(--fg);resize:vertical;min-height:64px}
+.out{font-family:var(--f-mono);font-size:14px;background:var(--tint);border-radius:8px;padding:10px;min-height:1.4em;overflow-wrap:anywhere;white-space:pre-wrap}
+.how{font-size:13px;color:var(--muted);display:grid;gap:4px}
+.how b{color:var(--fg);margin-top:6px}
+.how b:first-child{margin-top:0}
+footer{font-size:12px;color:var(--muted);text-align:center}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="tag">● 서버 없음 · 파일은 내 컴퓨터 밖으로 안 나감</div>
+    <h1>한글 파일명 복구기</h1>
+    <p class="lead"><strong class="hook">맥에서 받은 압축파일, 윈도우에서 열었더니 비어 있나요?</strong> 한글 이름이 깨져서 그래요. 파일·폴더·ZIP을 넣으면 원래 이름으로 되살려 드려요.</p>
+    <div class="demo" aria-label="복구 예시">
+      <div><span class="bad">ㄱㅖㅇㅑㄱㅅㅓ.pdf</span><span class="arrow">→</span><span class="good">계약서.pdf</span></div>
+      <div><span class="bad">斑利辑.xlsx</span><span class="arrow">→</span><span class="good">견적서.xlsx</span></div>
+    </div>
+  </header>
+
+  <div class="dropbox">
+    <label class="drop" id="drop" tabindex="0">
+      <strong>파일·폴더·ZIP을 여기에 놓거나 클릭해서 선택</strong>
+      <span>ZIP은 <b>풀지 말고</b> 그대로 넣으세요 · 고친 결과는 ZIP 하나로 받아요</span>
+      <input type="file" id="picker" multiple hidden>
+    </label>
+    <input type="file" id="dirPicker" webkitdirectory multiple hidden>
+    <div class="row">
+      <button type="button" class="linkbtn" id="pickDir">폴더째 선택하기</button>
+      <label><input type="checkbox" id="optZip" checked> ZIP은 풀어서 안쪽까지 고치기</label>
+      <label><input type="checkbox" id="optBody" checked> 텍스트 파일 속 한글도 고치기</label>
+    </div>
+  </div>
+
+  <section class="panel" aria-live="polite">
+    <div class="head">
+      <h2>파일 목록 <span class="ex" id="exTag">예시</span></h2>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="stats" id="stats"></div>
+    <ul class="list" id="list"></ul>
+    <div class="btns">
+      <button class="primary" id="save" disabled>고친 파일 받기 (ZIP)</button>
+      <button id="clear" disabled>목록 비우기</button>
+    </div>
+    <p class="msg" id="msg"></p>
+  </section>
+
+  <section class="panel">
+    <div class="head"><h2>글자만 고치기</h2><span class="count">파일 없이 이름·문장만 붙여넣기</span></div>
+    <textarea id="txt" placeholder="깨진 글자를 붙여넣으세요">ㅎㅏㄱㄱㅛ ㄱㅏㅈㅓㅇㅌㅗㅇㅅㅣㄴㅁㅜㄴ_10ㅇㅝㄹ.hwp</textarea>
+    <div class="out" id="txtOut"></div>
+    <div class="btns"><button id="copy">복사</button></div>
+  </section>
+
+  <section class="panel how">
+    <b>열었더니 "비어 있습니다"라고 나오는 ZIP</b>
+    <span>맥에서 한글 이름 폴더를 압축해 보내면, 윈도우가 그 이름을 읽지 못해 안의 파일까지 통째로 숨겨버려요. 파일은 멀쩡히 들어 있으니 ZIP을 풀지 말고 여기에 넣으세요.</span>
+    <b>쪼개진 한글 (ㅎㅏㄴㄱㅡㄹ)</b>
+    <span>맥은 한글을 자음·모음을 따로 저장하는 방식으로, 윈도우는 완성된 글자로 저장해요. 맥에서 만든 파일을 윈도우·카톡·메일로 보내면 이름이 쪼개져 보입니다.</span>
+    <b>한자·기호로 깨진 이름 (斑利辑, °ßÀû¼­)</b>
+    <span>압축 프로그램마다 이름을 적는 방식이 달라서, 다른 컴퓨터에서 풀면 이름이 한자나 기호로 바뀌어요. 이미 풀어버린 파일도, 풀기 전 ZIP도 원래 한글 이름을 찾아 드려요. 추정으로 바꾼 이름은 체크를 풀면 그대로 둬요.</span>
+    <b>원본은 그대로예요</b>
+    <span>이름과 텍스트 속 깨진 한글만 고치고 나머지는 건드리지 않아요. 맥이 몰래 넣는 __MACOSX, .DS_Store 같은 찌꺼기 파일은 빼고 담아요.</span>
+  </section>
+
+  <footer>한글 파일명 복구기 · 모든 처리는 이 브라우저 안에서</footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+// ── Hangul tables (compatibility jamo — the form people see and type)
+const CHO  = [...'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ'];
+const JUNG = [...'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ'];
+const JONG = ['', ...'ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ'];
+const VC = {'ㅗㅏ':'ㅘ','ㅗㅐ':'ㅙ','ㅗㅣ':'ㅚ','ㅜㅓ':'ㅝ','ㅜㅔ':'ㅞ','ㅜㅣ':'ㅟ','ㅡㅣ':'ㅢ'};
+const FC = {'ㄱㅅ':'ㄳ','ㄴㅈ':'ㄵ','ㄴㅎ':'ㄶ','ㄹㄱ':'ㄺ','ㄹㅁ':'ㄻ','ㄹㅂ':'ㄼ','ㄹㅅ':'ㄽ','ㄹㅌ':'ㄾ','ㄹㅍ':'ㄿ','ㄹㅎ':'ㅀ','ㅂㅅ':'ㅄ'};
+const isV = c => JUNG.includes(c);
+
+// Loose compatibility jamo ("ㅎㅏㄴ", typed or copied) → syllables
+function assemble(s){
+  const a = [...s]; let out = '', i = 0;
+  while (i < a.length){
+    const ci = CHO.indexOf(a[i]);
+    if (ci >= 0 && i + 1 < a.length && isV(a[i+1])){
+      let v = a[i+1], j = i + 2;
+      if (j < a.length && VC[v + a[j]]){ v = VC[v + a[j]]; j++; }
+      let f = '';
+      if (j < a.length && JONG.indexOf(a[j]) > 0 && !(j + 1 < a.length && isV(a[j+1]))){
+        f = a[j]; j++;
+        if (j < a.length && FC[f + a[j]] && !(j + 1 < a.length && isV(a[j+1]))){ f = FC[f + a[j]]; j++; }
+      }
+      out += String.fromCharCode(0xAC00 + (ci * 21 + JUNG.indexOf(v)) * 28 + JONG.indexOf(f));
+      i = j;
+    } else { out += a[i]; i++; }
+  }
+  return out;
+}
+// Mac (NFD) → composed (NFC), then any loose jamo left over
+const fix = s => assemble(s.normalize('NFC'));
+const nameBroken = s => s !== fix(s);
+// Show a split name the way Windows shows it, so it looks split on every device
+function asSeen(s){
+  return [...s.normalize('NFD')].map(ch => {
+    const c = ch.charCodeAt(0);
+    if (c >= 0x1100 && c <= 0x1112) return CHO[c - 0x1100];
+    if (c >= 0x1161 && c <= 0x1175) return JUNG[c - 0x1161];
+    if (c >= 0x11A8 && c <= 0x11C2) return JONG[c - 0x11A7];
+    return ch;
+  }).join('');
+}
+
+// ── Garbled names (斑利辑.xlsx, °ßÀû¼­.xlsx, 怨꾩빟…): Korean bytes that some program read with the wrong
+// character set. Re-encode with that wrong set to get the original bytes back, then read them correctly.
+const CP437_HI = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
+const WRONG = ['gbk', 'big5', 'shift_jis', 'euc-kr', 'windows-1252', 'cp437'];
+const RIGHT = ['utf-8', 'euc-kr'];
+const encMaps = {};
+function encMap(name){
+  if (encMaps[name]) return encMaps[name];
+  const m = new Map();
+  if (name === 'cp437'){ [...CP437_HI].forEach((ch, i) => m.set(ch, [0x80 + i])); }
+  else {
+    const d = new TextDecoder(name);
+    const put = bytes => { const s = d.decode(new Uint8Array(bytes)); if (s.length === 1 && s !== '\uFFFD' && !m.has(s)) m.set(s, bytes); };
+    for (let a = 0x80; a <= 0xFF; a++) put([a]);
+    if (name !== 'windows-1252') for (let a = 0x81; a <= 0xFE; a++) for (let b = 0x40; b <= 0xFE; b++) put([a, b]);
+  }
+  return (encMaps[name] = m);
+}
+function encodeAs(name, s){
+  const m = encMap(name), out = [];
+  for (const ch of s){
+    const c = ch.codePointAt(0);
+    if (c < 0x80){ out.push(c); continue; }
+    const b = m.get(ch); if (!b) return null;
+    out.push(...b);
+  }
+  return new Uint8Array(out);
+}
+const hangulCount = s => (s.match(/[가-힣]/g) || []).length;
+const hasHigh = s => /[^\x00-\x7F]/.test(s);
+// Returns the recovered name, or null when nothing better is found
+function ungarble(s){
+  if (!hasHigh(s)) return null;
+  const base = hangulCount(fix(s));
+  let best = null, bestScore = base;
+  for (const w of WRONG){
+    const bytes = encodeAs(w, s); if (!bytes) continue;
+    for (const r of RIGHT){
+      if (r === w) continue;
+      let t; try { t = new TextDecoder(r, { fatal: true }).decode(bytes); } catch { continue; }
+      t = fix(t);
+      if (/[\uFFFD\x00-\x1F]/.test(t)) continue;
+      const h = hangulCount(t), high = (t.match(/[^\x00-\x7F]/g) || []).length;
+      if (h > bestScore && h / high >= 0.9){ best = t; bestScore = h; }
+    }
+  }
+  return best;
+}
+
+// ── File classification
+const TEXT_EXT = new Set(['txt','csv','tsv','md','json','srt','smi','vtt','html','htm','xml','log','yml','yaml','ini']);
+const ext = p => { const b = p.split('/').pop(); const d = b.lastIndexOf('.'); return d > 0 ? b.slice(d+1).toLowerCase() : ''; };
+const isJunk = p => { const parts = p.split('/'); const b = parts[parts.length-1];
+  return parts.includes('__MACOSX') || b === '.DS_Store' || b.startsWith('._') || b === 'Thumbs.db'; };
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+const euckr = new TextDecoder('euc-kr');
+const enc = new TextEncoder();
+const TEXT_LIMIT = 20 * 1024 * 1024;
+
+// ── State. Each item: {path, load(), size, date, zip (source zip name|null), encFixed, isDir, body: null|'same'|'fixed', fixedText}
+let items = [];
+let skipped = 0;
+let showingSample = true;
+
+const SAMPLE = [
+  { path: '회의록_최종.docx'.normalize('NFD') },
+  { path: '斑利辑.xlsx', guess: '견적서.xlsx', useGuess: true },
+  { path: '거래처 자료/기획안.pptx', zip: '자료.zip', encFixed: true },
+  { path: '자막_1화.srt', body: 'fixed' },
+  { path: 'report.pdf' },
+];
+
+// Final name for an item: garble-recovered (if chosen) → NFD/jamo fixed
+const target = it => (it.guess && it.useGuess) ? it.guess : fix(it.path);
+const nameChanged = it => target(it) !== it.path;
+
+function status(it){
+  const tags = [];
+  if (it.encFixed) tags.push(['fix','ZIP 이름']);
+  if (it.guess && it.useGuess) tags.push(['fix','깨진 글자']);
+  else if (nameBroken(it.path)) tags.push(['fix','이름 고침']);
+  if (it.body === 'fixed' && $('#optBody').checked) tags.push(['body','내용 고침']);
+  if (!tags.length) tags.push(['fine','정상']);
+  return tags;
+}
+
+// ── Rendering
+const listEl = $('#list'), countEl = $('#count'), statsEl = $('#stats'), msgEl = $('#msg');
+const saveBtn = $('#save'), clearBtn = $('#clear'), exTag = $('#exTag');
+const MAX_ROWS = 300;
+
+function row(it){
+  const li = document.createElement('li');
+  const pills = document.createElement('div'); pills.className = 'pills';
+  for (const [cls, label] of status(it)){ const p = document.createElement('span'); p.className = 'pill ' + cls; p.textContent = label; pills.append(p); }
+  const names = document.createElement('div'); names.className = 'names';
+  if (it.guess){
+    const a = document.createElement('div'); a.className = 'from'; a.textContent = it.path;
+    const b = document.createElement('div'); b.className = 'to'; b.textContent = '→ ' + it.guess;
+    const lab = document.createElement('label'); lab.className = 'pick';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!it.useGuess;
+    cb.addEventListener('change', () => { it.useGuess = cb.checked; render(); });
+    lab.append(cb, document.createTextNode(' 이 이름으로 바꾸기 (추정)'));
+    names.append(a, b, lab);
+  } else if (nameBroken(it.path)){
+    const a = document.createElement('div'); a.className = 'from'; a.textContent = asSeen(it.path);
+    const b = document.createElement('div'); b.className = 'to'; b.textContent = '→ ' + fix(it.path);
+    names.append(a, b);
+  } else {
+    const b = document.createElement('div'); b.className = 'to'; b.textContent = it.path + (it.isDir ? '/' : '');
+    names.append(b);
+  }
+  if (it.zip){ const s = document.createElement('div'); s.className = 'src'; s.textContent = zipLabel(it.zip) + ' 안'; names.append(s); }
+  li.append(pills, names);
+  return li;
+}
+
+function pill(cls, text){ const p = document.createElement('span'); p.className = 'pill ' + cls; p.textContent = text; return p; }
+
+function render(){
+  const list = showingSample ? SAMPLE : items;
+  listEl.replaceChildren();
+  list.slice(0, MAX_ROWS).forEach(it => listEl.append(row(it)));
+  if (list.length > MAX_ROWS){ const li = document.createElement('li'); li.className = 'more'; li.textContent = `외 ${list.length - MAX_ROWS}개 (받을 때는 모두 포함)`; listEl.append(li); }
+  const nName = list.filter(it => it.encFixed || nameChanged(it)).length;
+  const nBody = $('#optBody').checked ? list.filter(it => it.body === 'fixed').length : 0;
+  countEl.textContent = `${list.filter(it => !it.isDir).length}개 파일`;
+  statsEl.replaceChildren(
+    pill('fix', `이름 고침 ${nName}`),
+    pill('body', `내용 고침 ${nBody}`),
+    ...(skipped && !showingSample ? [pill('skip', `맥 찌꺼기 제외 ${skipped}`)] : [])
+  );
+  exTag.hidden = !showingSample;
+  saveBtn.disabled = showingSample || !items.length;
+  clearBtn.disabled = showingSample;
+}
+
+// ── Adding input. `entries` = [{file, path}]
+async function add(entries){
+  if (!entries.length) return;
+  if (showingSample){ showingSample = false; items = []; skipped = 0; }
+  msgEl.textContent = '읽는 중…';
+  const openZips = $('#optZip').checked;
+  for (const { file, path } of entries){
+    if (isJunk(path)){ skipped++; continue; }
+    if (openZips && ext(path) === 'zip'){
+      try { await addZip(file, path); } catch { msgEl.textContent = `${fix(path)}: 열 수 없는 ZIP이라 그대로 담아요`; pushFile(file, path); }
+      continue;
+    }
+    pushFile(file, path);
+  }
+  render();
+  await scanBodies();
+  if (msgEl.textContent === '읽는 중…') msgEl.textContent = '';
+  render();
+}
+
+function pushFile(file, path){
+  items.push(withGuess({ path, size: file.size, date: new Date(file.lastModified || Date.now()), load: () => file.arrayBuffer(), zip: null, encFixed: false, isDir: false, body: null }));
+}
+function withGuess(it){ const g = ungarble(it.path); if (g){ it.guess = g; it.useGuess = true; } return it;
+}
+const zipBase = z => z.split('/').pop().replace(/\.zip$/i, '');
+function zipLabel(z){ const b = z.split('/').pop(); return ungarble(b) || fix(b);
+}
+
+async function addZip(file, zipPath){
+  const legacy = new Set();
+  const zip = await JSZip.loadAsync(file, {
+    // Names without the UTF-8 flag: Mac writes UTF-8 anyway, Korean Windows writes CP949
+    decodeFileName: bytes => {
+      const u8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+      try { return utf8.decode(u8); }
+      catch { const s = euckr.decode(u8); legacy.add(s); return s; }
+    }
+  });
+  zip.forEach((rel, entry) => {
+    if (isJunk(rel)){ skipped++; return; }
+    const path = entry.dir ? rel.replace(/\/$/, '') : rel;
+    items.push(withGuess({
+      path, zip: zipPath, isDir: entry.dir, date: entry.date || new Date(),
+      encFixed: legacy.has(rel), size: entry._data ? entry._data.uncompressedSize : 0,
+      load: () => entry.async('uint8array'), body: null
+    }));
+  });
+}
+
+async function scanBodies(){
+  for (const it of items){
+    if (it.isDir || it.body !== null) continue;
+    if (!TEXT_EXT.has(ext(it.path)) || it.size > TEXT_LIMIT){ it.body = 'n/a'; continue; }
+    try {
+      const text = utf8.decode(new Uint8Array(await it.load()));
+      const fixed = fix(text);
+      if (fixed !== text){ it.body = 'fixed'; it.fixedText = fixed; } else it.body = 'same';
+    } catch { it.body = 'n/a'; } // not UTF-8 text: leave the file alone
+  }
+}
+
+// ── Drop & pick
+const drop = $('#drop'), picker = $('#picker'), dirPicker = $('#dirPicker');
+const fromInput = fl => Array.from(fl).map(f => ({ file: f, path: f.webkitRelativePath || f.name }));
+picker.addEventListener('change', e => { add(fromInput(e.target.files)); picker.value = ''; });
+dirPicker.addEventListener('change', e => { add(fromInput(e.target.files)); dirPicker.value = ''; });
+$('#pickDir').addEventListener('click', () => dirPicker.click());
+drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); picker.click(); }});
+['dragenter','dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+
+async function walk(entry, prefix, out){
+  if (entry.isFile){
+    const file = await new Promise((res, rej) => entry.file(res, rej));
+    out.push({ file, path: prefix + entry.name });
+  } else if (entry.isDirectory){
+    const reader = entry.createReader();
+    for (;;){
+      const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+      if (!batch.length) break;
+      for (const child of batch) await walk(child, prefix + entry.name + '/', out);
+    }
+  }
+}
+// Plain files go straight in as File objects. Only folders need the directory-reading API,
+// which some setups refuse (e.g. a page opened from a local file), so it can fail on its own.
+drop.addEventListener('drop', async e => {
+  const dt = e.dataTransfer;
+  const plain = [], dirs = [];
+  if (dt.items && dt.items.length){
+    for (const item of Array.from(dt.items)){
+      if (item.kind !== 'file') continue;
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry && entry.isDirectory) dirs.push(entry);
+      else { const f = item.getAsFile(); if (f) plain.push({ file: f, path: f.name }); }
+    }
+  } else plain.push(...fromInput(dt.files));
+  const out = [...plain];
+  let dirFailed = false;
+  for (const d of dirs){
+    const got = [];
+    try { await walk(d, '', got); out.push(...got); } catch { dirFailed = true; }
+  }
+  if (out.length) await add(out);
+  if (dirFailed) msgEl.textContent = '끌어온 폴더를 읽지 못했어요. 위의 "폴더째 선택하기"로 골라주세요';
+  else if (!out.length) msgEl.textContent = '파일을 찾지 못했어요. 클릭해서 골라주세요';
+});
+
+$('#optBody').addEventListener('change', render);
+clearBtn.addEventListener('click', () => { items = []; skipped = 0; showingSample = true; msgEl.textContent = ''; render(); });
+
+// ── Saving: claude.ai downloads capability when present, plain link on a normal site
+let downloads = null;
+if (window.claude && typeof window.claude.use === 'function'){
+  window.claude.use('downloads').then(d => { downloads = d; }).catch(() => {});
+}
+async function saveBlob(blob, filename){
+  if (downloads){
+    try { await downloads.save({ filename, data: blob }); return '받기 완료'; }
+    catch (err){
+      if (err && err.code === 'declined') return '받기를 취소했어요';
+      if (err && err.code === 'rate_limited') return '이미 받기 창이 열려 있어요. 잠시 후 다시 눌러주세요';
+      return '이 화면에서는 저장할 수 없어요';
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return '받기 완료';
+}
+
+function outputName(){
+  const zips = new Set(items.map(it => it.zip));
+  if (zips.size === 1 && !zips.has(null)){ return zipLabel([...zips][0]).replace(/\.zip$/i, '') + '_복구.zip'; }
+  return '파일명_복구.zip';
+}
+
+saveBtn.addEventListener('click', async () => {
+  if (typeof JSZip === 'undefined'){ msgEl.textContent = '압축 도구를 불러오지 못했어요. 새로고침 후 다시 시도해주세요'; return; }
+  saveBtn.disabled = true;
+  msgEl.textContent = '묶는 중…';
+  // One zip dropped alone → its contents go at the top level. Otherwise each zip gets its own folder.
+  const zips = new Set(items.map(it => it.zip));
+  const flatten = zips.size === 1 && !zips.has(null);
+  const out = new JSZip();
+  const used = new Map();
+  const useBody = $('#optBody').checked;
+  try {
+    for (const it of items){
+      let path = target(it);
+      if (it.zip && !flatten) path = zipLabel(it.zip).replace(/\.zip$/i, '') + '/' + path;
+      if (it.isDir){ out.folder(path); continue; }
+      const k = used.get(path) || 0; used.set(path, k + 1);
+      if (k){ const d = path.lastIndexOf('.'); const s = path.lastIndexOf('/'); path = d > s + 1 ? `${path.slice(0,d)} (${k+1})${path.slice(d)}` : `${path} (${k+1})`; }
+      const data = (useBody && it.body === 'fixed') ? enc.encode(it.fixedText) : await it.load();
+      out.file(path, data, { date: it.date });
+    }
+    const blob = await out.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 1 } });
+    msgEl.textContent = await saveBlob(blob, outputName());
+  } catch (err){
+    msgEl.textContent = '묶는 중 문제가 생겼어요: ' + (err && err.message ? err.message : err);
+  }
+  saveBtn.disabled = false;
+});
+
+// ── Text-only mode
+const txt = $('#txt'), txtOut = $('#txtOut');
+const fixText = v => v.split('\n').map(line => ungarble(line) || fix(line)).join('\n');
+const updTxt = () => { txtOut.textContent = fixText(txt.value) || ' '; };
+txt.addEventListener('input', updTxt);
+$('#copy').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  try { await navigator.clipboard.writeText(fixText(txt.value)); btn.textContent = '복사됨'; }
+  catch { const r = document.createRange(); r.selectNodeContents(txtOut); const s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = '선택됨 — Ctrl+C'; }
+  setTimeout(() => btn.textContent = '복사', 1500);
+});
+
+updTxt();
+render();
+</script>
+
+</body>
+</html>
